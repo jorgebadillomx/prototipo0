@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Registro de clientes</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        background-color: #f5f7fa;
+        color: #1f2933;
+      }
+
+      body {
+        margin: 0;
+        padding: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      main.container {
+        width: min(960px, 95vw);
+        background: white;
+        border-radius: 16px;
+        box-shadow: 0 16px 60px rgba(15, 23, 42, 0.12);
+        padding: 32px;
+        box-sizing: border-box;
+      }
+
+      h1 {
+        margin-top: 0;
+        margin-bottom: 24px;
+        font-size: 2rem;
+        color: #0b7285;
+      }
+
+      form.client-form {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+      }
+
+      section.group {
+        border: 1px solid #e1e8f0;
+        border-radius: 12px;
+        padding: 20px;
+        background: #f9fbfd;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      section.group h2 {
+        margin: 0;
+        font-size: 1.1rem;
+        color: #1f2933;
+      }
+
+      label.field {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        font-weight: 600;
+        font-size: 0.95rem;
+        color: #334e68;
+      }
+
+      label.field input,
+      label.field select,
+      label.field textarea {
+        padding: 10px 12px;
+        border-radius: 8px;
+        border: 1px solid #cbd2d9;
+        font-size: 0.95rem;
+        font-family: inherit;
+        transition: border 0.2s ease, box-shadow 0.2s ease;
+      }
+
+      label.field textarea {
+        min-height: 120px;
+        resize: vertical;
+      }
+
+      label.field input:focus,
+      label.field select:focus,
+      label.field textarea:focus {
+        outline: none;
+        border-color: #0b7285;
+        box-shadow: 0 0 0 3px rgba(11, 114, 133, 0.2);
+      }
+
+      .row {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 16px;
+      }
+
+      section.preferences {
+        flex-direction: row;
+        flex-wrap: wrap;
+        gap: 12px 24px;
+        align-items: center;
+      }
+
+      section.preferences h2 {
+        flex-basis: 100%;
+      }
+
+      section.preferences label {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-weight: 600;
+        color: #1f2933;
+      }
+
+      .actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 12px;
+      }
+
+      .actions button {
+        padding: 12px 20px;
+        border-radius: 8px;
+        border: none;
+        font-size: 1rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: transform 0.1s ease, box-shadow 0.1s ease;
+      }
+
+      .actions button[type="reset"] {
+        background: #e1e8f0;
+        color: #243b53;
+      }
+
+      .actions button[type="submit"] {
+        background: #0b7285;
+        color: white;
+        box-shadow: 0 8px 20px rgba(11, 114, 133, 0.35);
+      }
+
+      .actions button:hover {
+        transform: translateY(-1px);
+      }
+
+      @media (max-width: 600px) {
+        main.container {
+          padding: 20px;
+        }
+
+        .actions {
+          flex-direction: column;
+          align-items: stretch;
+        }
+
+        .actions button {
+          width: 100%;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="container">
+      <h1>Registro de clientes</h1>
+      <form class="client-form" aria-label="Formulario para registrar clientes">
+        <section class="group" aria-labelledby="datos-generales">
+          <h2 id="datos-generales">Datos generales</h2>
+          <label class="field" for="full_name">
+            Nombre completo
+            <input id="full_name" name="full_name" type="text" placeholder="Ej. Ana López" required />
+          </label>
+          <label class="field" for="email">
+            Correo electrónico
+            <input id="email" name="email" type="email" placeholder="ana@example.com" required />
+          </label>
+          <label class="field" for="phone">
+            Teléfono
+            <input id="phone" name="phone" type="tel" placeholder="(55) 1234 5678" required />
+          </label>
+          <label class="field" for="birth_date">
+            Fecha de nacimiento
+            <input id="birth_date" name="birth_date" type="date" />
+          </label>
+          <label class="field" for="document_id">
+            Identificación oficial
+            <input id="document_id" name="document_id" type="text" placeholder="CURP / DNI / CC" />
+          </label>
+        </section>
+
+        <section class="group" aria-labelledby="datos-empresa">
+          <h2 id="datos-empresa">Empresa y cargo</h2>
+          <label class="field" for="company">
+            Empresa
+            <input id="company" name="company" type="text" placeholder="Nombre de la empresa" />
+          </label>
+          <label class="field" for="job_title">
+            Cargo
+            <input id="job_title" name="job_title" type="text" placeholder="Cargo o puesto" />
+          </label>
+          <label class="field" for="website">
+            Sitio web
+            <input id="website" name="website" type="url" placeholder="https://empresa.com" />
+          </label>
+        </section>
+
+        <section class="group" aria-labelledby="direccion">
+          <h2 id="direccion">Dirección</h2>
+          <label class="field" for="street">
+            Calle y número
+            <input id="street" name="street" type="text" placeholder="Av. Reforma 123" required />
+          </label>
+          <div class="row">
+            <label class="field" for="city">
+              Ciudad
+              <input id="city" name="city" type="text" placeholder="Ciudad" required />
+            </label>
+            <label class="field" for="state">
+              Estado / Provincia
+              <input id="state" name="state" type="text" placeholder="Estado o provincia" required />
+            </label>
+            <label class="field" for="postal_code">
+              Código postal
+              <input id="postal_code" name="postal_code" type="text" placeholder="00000" required />
+            </label>
+          </div>
+          <label class="field" for="country">
+            País
+            <input id="country" name="country" type="text" placeholder="País" required />
+          </label>
+        </section>
+
+        <section class="group" aria-labelledby="preferencias">
+          <h2 id="preferencias">Preferencias de contacto</h2>
+          <label>
+            <input id="pref_email" name="preferred_contact" type="checkbox" value="email" checked />
+            Email
+          </label>
+          <label>
+            <input id="pref_phone" name="preferred_contact" type="checkbox" value="phone" />
+            Teléfono
+          </label>
+          <label>
+            <input id="pref_whatsapp" name="preferred_contact" type="checkbox" value="whatsapp" />
+            WhatsApp
+          </label>
+          <label>
+            <input id="pref_sms" name="preferred_contact" type="checkbox" value="sms" />
+            SMS
+          </label>
+        </section>
+
+        <section class="group" aria-labelledby="seguimiento">
+          <h2 id="seguimiento">Seguimiento comercial</h2>
+          <div class="row">
+            <label class="field" for="status">
+              Estado del cliente
+              <select id="status" name="status" required>
+                <option value="prospect">Prospecto</option>
+                <option value="contacted">Contactado</option>
+                <option value="qualified">Calificado</option>
+                <option value="client">Cliente activo</option>
+                <option value="inactive">Inactivo</option>
+              </select>
+            </label>
+            <label class="field" for="source">
+              Origen del contacto
+              <select id="source" name="source">
+                <option value="referral">Recomendación</option>
+                <option value="website">Sitio web</option>
+                <option value="social">Redes sociales</option>
+                <option value="event">Evento</option>
+                <option value="other">Otro</option>
+              </select>
+            </label>
+            <label class="field" for="assigned_to">
+              Ejecutivo asignado
+              <input id="assigned_to" name="assigned_to" type="text" placeholder="Nombre del ejecutivo" />
+            </label>
+          </div>
+          <label class="field" for="next_action">
+            Próximo paso
+            <input id="next_action" name="next_action" type="text" placeholder="Ej. Llamada de seguimiento" />
+          </label>
+          <label class="field" for="next_action_date">
+            Fecha del próximo paso
+            <input id="next_action_date" name="next_action_date" type="date" />
+          </label>
+        </section>
+
+        <section class="group" aria-labelledby="notas">
+          <h2 id="notas">Notas adicionales</h2>
+          <label class="field" for="notes">
+            Comentarios
+            <textarea id="notes" name="notes" placeholder="Información relevante sobre el cliente"></textarea>
+          </label>
+        </section>
+
+        <div class="actions">
+          <button type="reset">Limpiar</button>
+          <button type="submit">Guardar cliente</button>
+        </div>
+      </form>
+    </main>
+  </body>
+</html>
