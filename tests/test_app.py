@@ -89,3 +89,48 @@ def test_menus_are_aggregated_by_roles(service: RoleService) -> None:
 def test_requesting_unknown_user_raises_not_found(service: RoleService) -> None:
     with pytest.raises(NotFoundError):
         service.list_users(UUID(int=1))
+
+
+def test_creating_role_with_existing_name_is_rejected(service: RoleService) -> None:
+    service.create_role(RoleCreate(name="Auditor", menus=["auditorias"]))
+
+    with pytest.raises(BadRequestError) as exc:
+        service.create_role(RoleCreate(name="auditor", menus=["reportes"]))
+
+    assert "rol" in str(exc.value).lower()
+
+
+def test_super_admin_role_cannot_be_created_twice(service: RoleService) -> None:
+    with pytest.raises(BadRequestError) as exc:
+        service.create_role(
+            RoleCreate(name="Otro Root", menus=["todo"], is_super_admin=True)
+        )
+
+    assert "super" in str(exc.value).lower()
+
+
+def test_creating_user_with_unknown_role_fails(service: RoleService) -> None:
+    unknown_role = UUID(int=999)
+
+    with pytest.raises(NotFoundError) as exc:
+        service.create_user(UserCreate(name="SinRol", role_ids=[unknown_role]))
+
+    assert "rol" in str(exc.value).lower()
+
+
+def test_creating_user_requires_at_least_one_role(service: RoleService) -> None:
+    with pytest.raises(BadRequestError) as exc:
+        service.create_user(UserCreate(name="SinRol", role_ids=[]))
+
+    assert "rol" in str(exc.value).lower()
+
+
+def test_user_roles_are_deduplicated_preserving_order(service: RoleService) -> None:
+    super_admin_role = _super_admin_role_id(service)
+    editor_role = service.create_role(RoleCreate(name="Editor", menus=["editar"]))
+
+    user = service.create_user(
+        UserCreate(name="Editor", role_ids=[super_admin_role, editor_role.id, editor_role.id])
+    )
+
+    assert [role.id for role in user.roles] == [super_admin_role, editor_role.id]
