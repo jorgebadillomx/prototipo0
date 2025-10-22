@@ -27,11 +27,12 @@ class BadRequestError(ServiceError):
 @dataclass
 class RoleService:
     datastore: DataStore
+    _authenticated_user: Optional[UserRead] = None
 
     def __init__(self, datastore: Optional[DataStore] = None) -> None:
         self.datastore = datastore or DataStore()
-        if not self.datastore.roles:
-            self.datastore.create_super_admin_role()
+        self.datastore.ensure_super_admin_role()
+        self._authenticated_user = None
 
     # Roles
     def create_role(self, payload: RoleCreate) -> Role:
@@ -54,11 +55,15 @@ class RoleService:
         return self.datastore.build_user_read(user)
 
     def _get_current_user(self, user_id: UUID) -> UserRead:
+        if self._authenticated_user and self._authenticated_user.id == user_id:
+            return self._authenticated_user
         try:
             user = self.datastore.get_user(user_id)
         except KeyError as exc:
             raise NotFoundError("Usuario no encontrado") from exc
-        return self.datastore.build_user_read(user)
+        built = self.datastore.build_user_read(user)
+        self._authenticated_user = built
+        return built
 
     def list_users(self, requester_id: UUID) -> List[UserRead]:
         if self.datastore.is_super_admin(requester_id):
