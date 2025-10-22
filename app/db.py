@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import sqlite3
+import threading
 from pathlib import Path
 from typing import Iterable, List, Optional, Union
 from uuid import UUID, uuid4
@@ -17,40 +18,43 @@ class DataStore:
         default_path = os.getenv("ROLE_SERVICE_DB_PATH", ":memory:")
         raw_path: Union[str, Path] = db_path if db_path is not None else default_path
         self._db_path = str(raw_path)
+        self._lock = threading.RLock()
         self._connection = sqlite3.connect(
             self._db_path,
             detect_types=sqlite3.PARSE_DECLTYPES,
             uri=self._db_path.startswith("file:"),
+            check_same_thread=False,
         )
         self._connection.row_factory = sqlite3.Row
         self._ensure_schema()
 
     # Schema management -------------------------------------------------
     def _ensure_schema(self) -> None:
-        self._connection.executescript(
-            """
-            CREATE TABLE IF NOT EXISTS roles (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL UNIQUE,
-                menus TEXT NOT NULL,
-                is_super_admin INTEGER NOT NULL CHECK (is_super_admin IN (0, 1))
-            );
+        with self._lock:
+            self._connection.executescript(
+                """
+                CREATE TABLE IF NOT EXISTS roles (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL UNIQUE,
+                    menus TEXT NOT NULL,
+                    is_super_admin INTEGER NOT NULL CHECK (is_super_admin IN (0, 1))
+                );
 
-            CREATE TABLE IF NOT EXISTS users (
-                id TEXT PRIMARY KEY,
-                name TEXT NOT NULL
-            );
+                CREATE TABLE IF NOT EXISTS users (
+                    id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL
+                );
 
-            CREATE TABLE IF NOT EXISTS user_roles (
-                user_id TEXT NOT NULL,
-                role_id TEXT NOT NULL,
-                position INTEGER NOT NULL,
-                PRIMARY KEY (user_id, role_id),
-                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-                FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
-            );
-            """
-        )
+                CREATE TABLE IF NOT EXISTS user_roles (
+                    user_id TEXT NOT NULL,
+                    role_id TEXT NOT NULL,
+                    position INTEGER NOT NULL,
+                    PRIMARY KEY (user_id, role_id),
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE
+                );
+                """
+            )
 
     # Role helpers ------------------------------------------------------
     def _row_to_role(self, row: sqlite3.Row) -> Role:
@@ -62,10 +66,11 @@ class DataStore:
         )
 
     def ensure_super_admin_role(self) -> Role:
-        cursor = self._connection.execute(
-            "SELECT id, name, menus, is_super_admin FROM roles WHERE is_super_admin = 1 LIMIT 1"
-        )
-        row = cursor.fetchone()
+        with self._lock:
+            cursor = self._connection.execute(
+                "SELECT id, name, menus, is_super_admin FROM roles WHERE is_super_admin = 1 LIMIT 1"
+            )
+            row = cursor.fetchone()
         if row is not None:
             return self._row_to_role(row)
         return self.create_super_admin_role()
@@ -73,20 +78,23 @@ class DataStore:
     def create_super_admin_role(self) -> Role:
         role_id = uuid4()
         role = Role(id=role_id, name="Super Administrador", menus=["admin"], is_super_admin=True)
-        with self._connection:
-            self._connection.execute(
-                "INSERT INTO roles (id, name, menus, is_super_admin) VALUES (?, ?, ?, ?)",
-                (str(role.id), role.name, json.dumps(role.menus), int(role.is_super_admin)),
-            )
+        with self._lock:
+            with self._connection:
+                self._connection.execute(
+                    "INSERT INTO roles (id, name, menus, is_super_admin) VALUES (?, ?, ?, ?)",
+                    (str(role.id), role.name, json.dumps(role.menus), int(role.is_super_admin)),
+                )
         return role
 
     # Roles -------------------------------------------------------------
     def create_role(self, payload: RoleCreate) -> Role:
         normalized = payload.normalized()
-        existing = self._connection.execute(
-            "SELECT 1 FROM roles WHERE LOWER(name) = ?",
-            (normalized.name.lower(),),
-        ).fetchone()
+        with self._lock:
+            cursor = self._connection.execute(
+                "SELECT 1 FROM roles WHERE LOWER(name) = ?",
+                (normalized.name.lower(),),
+            )
+            existing = cursor.fetchone()
         if existing:
             raise ValueError("Ya existe un rol con ese nombre")
         if normalized.is_super_admin:
@@ -97,52 +105,58 @@ class DataStore:
             menus=normalized.menus,
             is_super_admin=normalized.is_super_admin,
         )
-        with self._connection:
-            self._connection.execute(
-                "INSERT INTO roles (id, name, menus, is_super_admin) VALUES (?, ?, ?, ?)",
-                (str(role.id), role.name, json.dumps(role.menus), int(role.is_super_admin)),
-            )
+        with self._lock:
+            with self._connection:
+                self._connection.execute(
+                    "INSERT INTO roles (id, name, menus, is_super_admin) VALUES (?, ?, ?, ?)",
+                    (str(role.id), role.name, json.dumps(role.menus), int(role.is_super_admin)),
+                )
         return role
 
     def list_roles(self) -> List[Role]:
-        cursor = self._connection.execute(
-            "SELECT id, name, menus, is_super_admin FROM roles ORDER BY name"
-        )
-        return [self._row_to_role(row) for row in cursor.fetchall()]
+        with self._lock:
+            cursor = self._connection.execute(
+                "SELECT id, name, menus, is_super_admin FROM roles ORDER BY name"
+            )
+            rows = cursor.fetchall()
+        return [self._row_to_role(row) for row in rows]
 
     def get_role(self, role_id: UUID) -> Role:
-        cursor = self._connection.execute(
-            "SELECT id, name, menus, is_super_admin FROM roles WHERE id = ?",
-            (str(role_id),),
-        )
-        row = cursor.fetchone()
+        with self._lock:
+            cursor = self._connection.execute(
+                "SELECT id, name, menus, is_super_admin FROM roles WHERE id = ?",
+                (str(role_id),),
+            )
+            row = cursor.fetchone()
         if row is None:
             raise KeyError("Rol no encontrado")
         return self._row_to_role(row)
 
     # Users -------------------------------------------------------------
     def _role_is_super_admin(self, role_id: UUID) -> bool:
-        cursor = self._connection.execute(
-            "SELECT is_super_admin FROM roles WHERE id = ?",
-            (str(role_id),),
-        )
-        row = cursor.fetchone()
+        with self._lock:
+            cursor = self._connection.execute(
+                "SELECT is_super_admin FROM roles WHERE id = ?",
+                (str(role_id),),
+            )
+            row = cursor.fetchone()
         if row is None:
             raise KeyError("Rol no encontrado")
         return bool(row["is_super_admin"])
 
     def _super_admin_user_exists(self) -> bool:
-        cursor = self._connection.execute(
-            """
-            SELECT 1
-            FROM users u
-            JOIN user_roles ur ON u.id = ur.user_id
-            JOIN roles r ON r.id = ur.role_id
-            WHERE r.is_super_admin = 1
-            LIMIT 1
-            """
-        )
-        return cursor.fetchone() is not None
+        with self._lock:
+            cursor = self._connection.execute(
+                """
+                SELECT 1
+                FROM users u
+                JOIN user_roles ur ON u.id = ur.user_id
+                JOIN roles r ON r.id = ur.role_id
+                WHERE r.is_super_admin = 1
+                LIMIT 1
+                """
+            )
+            return cursor.fetchone() is not None
 
     def create_user(self, payload: UserCreate) -> User:
         normalized = payload.normalized()
@@ -160,18 +174,19 @@ class DataStore:
             raise ValueError("Ya existe un usuario super administrador")
 
         user_id = uuid4()
-        with self._connection:
-            self._connection.execute(
-                "INSERT INTO users (id, name) VALUES (?, ?)",
-                (str(user_id), normalized.name),
-            )
-            self._connection.executemany(
-                "INSERT INTO user_roles (user_id, role_id, position) VALUES (?, ?, ?)",
-                [
-                    (str(user_id), str(role_id), index)
-                    for index, role_id in enumerate(normalized.role_ids)
-                ],
-            )
+        with self._lock:
+            with self._connection:
+                self._connection.execute(
+                    "INSERT INTO users (id, name) VALUES (?, ?)",
+                    (str(user_id), normalized.name),
+                )
+                self._connection.executemany(
+                    "INSERT INTO user_roles (user_id, role_id, position) VALUES (?, ?, ?)",
+                    [
+                        (str(user_id), str(role_id), index)
+                        for index, role_id in enumerate(normalized.role_ids)
+                    ],
+                )
         return User(id=user_id, name=normalized.name, role_ids=normalized.role_ids)
 
     def _build_user_read(self, user: User) -> UserRead:
@@ -179,39 +194,50 @@ class DataStore:
         return UserRead(id=user.id, name=user.name, roles=roles)
 
     def _fetch_roles_for_user(self, user_id: UUID) -> List[Role]:
-        cursor = self._connection.execute(
-            """
-            SELECT r.id, r.name, r.menus, r.is_super_admin
-            FROM roles r
-            JOIN user_roles ur ON r.id = ur.role_id
-            WHERE ur.user_id = ?
-            ORDER BY ur.position
-            """,
-            (str(user_id),),
-        )
-        return [self._row_to_role(row) for row in cursor.fetchall()]
+        with self._lock:
+            cursor = self._connection.execute(
+                """
+                SELECT r.id, r.name, r.menus, r.is_super_admin
+                FROM roles r
+                JOIN user_roles ur ON r.id = ur.role_id
+                WHERE ur.user_id = ?
+                ORDER BY ur.position
+                """,
+                (str(user_id),),
+            )
+            rows = cursor.fetchall()
+        return [self._row_to_role(row) for row in rows]
 
     def list_users(self) -> List[UserRead]:
-        cursor = self._connection.execute("SELECT id, name FROM users ORDER BY name")
+        with self._lock:
+            cursor = self._connection.execute("SELECT id, name FROM users ORDER BY name")
+            user_rows = cursor.fetchall()
         users: List[UserRead] = []
-        for row in cursor.fetchall():
-            user = User(id=UUID(row["id"]), name=row["name"], role_ids=self._user_role_ids(UUID(row["id"])))
+        for row in user_rows:
+            user = User(
+                id=UUID(row["id"]),
+                name=row["name"],
+                role_ids=self._user_role_ids(UUID(row["id"])),
+            )
             users.append(self._build_user_read(user))
         return users
 
     def _user_role_ids(self, user_id: UUID) -> List[UUID]:
-        cursor = self._connection.execute(
-            "SELECT role_id FROM user_roles WHERE user_id = ? ORDER BY position",
-            (str(user_id),),
-        )
-        return [UUID(row["role_id"]) for row in cursor.fetchall()]
+        with self._lock:
+            cursor = self._connection.execute(
+                "SELECT role_id FROM user_roles WHERE user_id = ? ORDER BY position",
+                (str(user_id),),
+            )
+            rows = cursor.fetchall()
+        return [UUID(row["role_id"]) for row in rows]
 
     def get_user(self, user_id: UUID) -> User:
-        cursor = self._connection.execute(
-            "SELECT id, name FROM users WHERE id = ?",
-            (str(user_id),),
-        )
-        row = cursor.fetchone()
+        with self._lock:
+            cursor = self._connection.execute(
+                "SELECT id, name FROM users WHERE id = ?",
+                (str(user_id),),
+            )
+            row = cursor.fetchone()
         if row is None:
             raise KeyError("Usuario no encontrado")
         role_ids = self._user_role_ids(user_id)
@@ -221,17 +247,18 @@ class DataStore:
         return self._build_user_read(user)
 
     def is_super_admin(self, user_id: UUID) -> bool:
-        cursor = self._connection.execute(
-            """
-            SELECT 1
-            FROM user_roles ur
-            JOIN roles r ON r.id = ur.role_id
-            WHERE ur.user_id = ? AND r.is_super_admin = 1
-            LIMIT 1
-            """,
-            (str(user_id),),
-        )
-        return cursor.fetchone() is not None
+        with self._lock:
+            cursor = self._connection.execute(
+                """
+                SELECT 1
+                FROM user_roles ur
+                JOIN roles r ON r.id = ur.role_id
+                WHERE ur.user_id = ? AND r.is_super_admin = 1
+                LIMIT 1
+                """,
+                (str(user_id),),
+            )
+            return cursor.fetchone() is not None
 
     def list_menus_for_user(self, user_id: UUID) -> List[str]:
         roles = self._fetch_roles_for_user(user_id)
@@ -246,23 +273,25 @@ class DataStore:
 
     # Maintenance -------------------------------------------------------
     def reset(self) -> None:
-        with self._connection:
-            self._connection.execute("DELETE FROM user_roles")
-            self._connection.execute("DELETE FROM users")
-            self._connection.execute("DELETE FROM roles")
+        with self._lock:
+            with self._connection:
+                self._connection.execute("DELETE FROM user_roles")
+                self._connection.execute("DELETE FROM users")
+                self._connection.execute("DELETE FROM roles")
 
     def load_roles(self, roles: Iterable[Role]) -> None:
-        with self._connection:
-            for role in roles:
-                self._connection.execute(
-                    """
-                    INSERT INTO roles (id, name, menus, is_super_admin)
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(id) DO UPDATE SET
-                        name = excluded.name,
-                        menus = excluded.menus,
-                        is_super_admin = excluded.is_super_admin
-                    """,
-                    (str(role.id), role.name, json.dumps(role.menus), int(role.is_super_admin)),
-                )
+        with self._lock:
+            with self._connection:
+                for role in roles:
+                    self._connection.execute(
+                        """
+                        INSERT INTO roles (id, name, menus, is_super_admin)
+                        VALUES (?, ?, ?, ?)
+                        ON CONFLICT(id) DO UPDATE SET
+                            name = excluded.name,
+                            menus = excluded.menus,
+                            is_super_admin = excluded.is_super_admin
+                        """,
+                        (str(role.id), role.name, json.dumps(role.menus), int(role.is_super_admin)),
+                    )
 
